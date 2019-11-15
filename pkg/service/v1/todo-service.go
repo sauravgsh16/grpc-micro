@@ -40,7 +40,7 @@ func (s *toDoServiceServer) checkAPI(api string) error {
 func (s *toDoServiceServer) connect(ctx context.Context) (*sql.Conn, error) {
 	c, err := s.db.Conn(ctx)
 	if err != nil {
-		return nil, status.Error(codes.Unknown, "failed to connect to database")
+		return nil, status.Error(codes.Unknown, fmt.Sprintf("failed to connect to database: %v", err))
 	}
 	return c, nil
 }
@@ -61,20 +61,17 @@ func (s *toDoServiceServer) Create(ctx context.Context, req *v1.CreateRequest) (
 		return nil, status.Error(codes.InvalidArgument, "invalid format for reminder: "+err.Error())
 	}
 
-	resp, err := c.ExecContext(ctx, "INSERT INTO ToDO(`Title`, `Description`, `Reminder`) VALUES(?, ?, ?)",
-		req.ToDo.Title, req.ToDo.Description, timestamp)
-	if err != nil {
-		return nil, status.Error(codes.Unknown, "failed to insert row: "+err.Error())
-	}
+	var returnedID int64
 
-	id, err := resp.LastInsertId()
+	err = c.QueryRowContext(ctx, `INSERT INTO ToDo (Title, Description, Reminder) VALUES($1, $2, $3) RETURNING ID`,
+		req.ToDo.Title, req.ToDo.Description, timestamp).Scan(&returnedID)
 	if err != nil {
-		return nil, status.Error(codes.Unknown, "failed to retrieve id for created task: "+err.Error())
+		return nil, status.Error(codes.Unknown, fmt.Sprintf("failed to insert row: %v", err))
 	}
 
 	return &v1.CreateResponse{
 		Api: apiversion,
-		Id:  id,
+		Id:  returnedID,
 	}, nil
 }
 
@@ -89,7 +86,7 @@ func (s *toDoServiceServer) Read(ctx context.Context, req *v1.ReadRequest) (*v1.
 	}
 	defer c.Close()
 
-	rows, err := c.QueryContext(ctx, "SELECT `ID`, `Title`, `Description`, `Reminder` FROM ToDO WHERE `ID`=?", req.Id)
+	rows, err := c.QueryContext(ctx, `SELECT ID, Title, Description, Reminder FROM ToDO WHERE ID=$1`, req.Id)
 	if err != nil {
 		return nil, status.Error(codes.Unknown, "failed to select from ToDo: "+err.Error())
 	}
@@ -142,7 +139,7 @@ func (s *toDoServiceServer) Update(ctx context.Context, req *v1.UpdateRequest) (
 	}
 
 	// Execute update query
-	resp, err := c.ExecContext(ctx, "UPDATE ToDo Set `Title`=?, `Description`=?, `Reminder`=? WHERE `ID`=?",
+	resp, err := c.ExecContext(ctx, `UPDATE ToDo Set Title=$1, Description=$2, Reminder=$3 WHERE ID=$4`,
 		req.Todo.Title, req.Todo.Description, reminder, req.Todo.Id)
 	if err != nil {
 		return nil, status.Error(codes.Unknown, "failed to update ToDo: "+err.Error())
@@ -174,7 +171,7 @@ func (s *toDoServiceServer) Delete(ctx context.Context, req *v1.DeleteRequest) (
 	}
 	defer c.Close()
 
-	resp, err := c.ExecContext(ctx, "DELETE FROM ToDo WHERE `ID`=?", req.Id)
+	resp, err := c.ExecContext(ctx, `DELETE FROM ToDo WHERE ID=$1`, req.Id)
 	if err != nil {
 		return nil, status.Error(codes.Unknown, "failed to delete row: "+err.Error())
 	}
@@ -205,7 +202,7 @@ func (s *toDoServiceServer) ReadAll(ctx context.Context, req *v1.ReadAllRequest)
 	}
 	defer c.Close()
 
-	rows, err := c.QueryContext(ctx, "SELECT `ID`, `Title`, `Description`, `Reminder` FROM ToDO")
+	rows, err := c.QueryContext(ctx, `SELECT ID, Title, Description, Reminder FROM ToDo`)
 	if err != nil {
 		return nil, status.Error(codes.Unknown, "fail to select rows from ToDo: "+err.Error())
 	}
