@@ -131,7 +131,7 @@ func (s *toDoServiceServer) Update(ctx context.Context, req *v1.UpdateRequest) (
 	if err != nil {
 		return nil, err
 	}
-	c.Close()
+	defer c.Close()
 
 	reminder, err := ptypes.Timestamp(req.Todo.Reminder)
 	if err != nil {
@@ -202,18 +202,18 @@ func (s *toDoServiceServer) ReadAll(ctx context.Context, req *v1.ReadAllRequest)
 	}
 	defer c.Close()
 
-	rows, err := c.QueryContext(ctx, `SELECT ID, Title, Description, Reminder FROM ToDo`)
+	rows, err := c.QueryContext(ctx, `SELECT Id, Title, Description, Reminder FROM ToDo`)
 	if err != nil {
 		return nil, status.Error(codes.Unknown, "fail to select rows from ToDo: "+err.Error())
 	}
-	rows.Close()
+	defer rows.Close()
 
 	var reminder time.Time
 	todoList := []*v1.ToDo{}
 
 	for rows.Next() {
 		td := new(v1.ToDo)
-		if err := rows.Scan(&td.Id, &td.Title, &td.Description, reminder); err != nil {
+		if err := rows.Scan(&td.Id, &td.Title, &td.Description, &reminder); err != nil {
 			return nil, status.Error(codes.Unknown, "failed to scan rows: "+err.Error())
 		}
 		td.Reminder, err = ptypes.TimestampProto(reminder)
@@ -227,8 +227,10 @@ func (s *toDoServiceServer) ReadAll(ctx context.Context, req *v1.ReadAllRequest)
 		return nil, status.Error(codes.Unknown, "failed to retrieve data from rows: "+err.Error())
 	}
 
-	return &v1.ReadAllResponse{
+	resp := &v1.ReadAllResponse{
 		Api:   apiversion,
 		ToDos: todoList,
-	}, nil
+	}
+
+	return resp, nil
 }
